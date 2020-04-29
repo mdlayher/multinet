@@ -1,6 +1,7 @@
 package multinet_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -241,7 +242,7 @@ func httpGet(t *testing.T, addr net.Addr) string {
 		}).String()
 	case *net.UnixAddr:
 		// Send requests over UNIX socket instead of TCP.
-		transport.Dial = func(_, _ string) (net.Conn, error) {
+		transport.DialContext = func(_ context.Context, _, _ string) (net.Conn, error) {
 			return net.Dial("unix", addr.String())
 		}
 

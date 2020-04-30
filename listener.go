@@ -1,6 +1,7 @@
 package multinet
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -49,8 +50,10 @@ type Listener struct {
 
 var _ net.Listener = &Listener{}
 
-// Listen creates a Listener which aggregates multiple net.Listeners.
-func Listen(ls []net.Listener) *Listener {
+// Listen creates a Listener which aggregates multiple net.Listeners. Although
+// it is possible to construct a Listener with no net.Listeners, it will always
+// return an error on Accept.
+func Listen(ls ...net.Listener) *Listener {
 	return &Listener{
 		ls:      ls,
 		doneC:   make(chan struct{}),
@@ -60,6 +63,11 @@ func Listen(ls []net.Listener) *Listener {
 
 // Accept accepts a net.Conn from one of the owned net.Listeners.
 func (l *Listener) Accept() (net.Conn, error) {
+	if len(l.ls) == 0 {
+		// No listeners, nothing to do.
+		return nil, errors.New("multinet: no net.Listeners added to Listener")
+	}
+
 	l.acceptOnce.Do(func() {
 		// On first Accept, create accept multiplexing goroutines which will
 		// feed accepted connections and errors over l.acceptC.

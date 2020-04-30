@@ -22,11 +22,11 @@ import (
 // TODO: copy over nettest.TestListener from vsock.
 
 func TestListenerAddr(t *testing.T) {
-	l := multinet.Listen([]net.Listener{
+	l := multinet.Listen(
 		localListener("tcp4"),
 		localListener("tcp6"),
 		localListener("unix"),
-	})
+	)
 	defer l.Close()
 
 	if diff := cmp.Diff("tcp,tcp,unix", l.Addr().Network()); diff != "" {
@@ -91,7 +91,7 @@ func TestListenerHTTP(t *testing.T) {
 		unix = localListener("unix")
 	)
 
-	l := multinet.Listen([]net.Listener{tcp4, tcp6, unix})
+	l := multinet.Listen(tcp4, tcp6, unix)
 
 	srv := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -179,11 +179,11 @@ func TestListenerCloseError(t *testing.T) {
 		el2 = &errListener{err: errors.New("another error")}
 	)
 
-	l := multinet.Listen([]net.Listener{
+	l := multinet.Listen(
 		localListener("tcp"),
 		el1,
 		el2,
-	})
+	)
 
 	var errs []error
 	for i := 0; i < 3; i++ {
@@ -200,6 +200,33 @@ func TestListenerCloseError(t *testing.T) {
 	if !el2.closed {
 		t.Fatal("second errListener was not closed")
 	}
+}
+
+func TestListenNoListeners(t *testing.T) {
+	// While a Listener constructed with no net.Listeners wouldn't be useful,
+	// we should verify it doesn't panic or similar.
+	l := multinet.Listen()
+
+	if diff := cmp.Diff(multinet.Addr{}, l.Addr()); diff != "" {
+		t.Fatalf("unexpected Addr (-want +got):\n%s", diff)
+	}
+
+	// Close before and after accept to verify sanity.
+	doClose := func() {
+		for i := 0; i < 3; i++ {
+			if err := l.Close(); err != nil {
+				t.Fatalf("failed to close listener: %v", err)
+			}
+		}
+	}
+
+	doClose()
+
+	if c, err := l.Accept(); err == nil || c != nil {
+		t.Fatalf("expected nil net.Conn (got: %#v) and non-nil error", c)
+	}
+
+	doClose()
 }
 
 func compareErrors(x, y error) bool {

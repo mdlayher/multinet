@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 )
 
 // An Addr is net.Addr which stores network address information for all
@@ -86,7 +87,7 @@ func (l *Listener) Accept() (net.Conn, error) {
 		return a.c, a.err
 	case <-l.doneC:
 		// TODO: good enough?
-		return nil, fmt.Errorf("multinet: use of closed network connection")
+		return nil, errors.New("multinet: use of closed network connection")
 	}
 }
 
@@ -99,6 +100,38 @@ func (l *Listener) Addr() net.Addr {
 	}
 
 	return addrs
+}
+
+// A deadlineListener is a net.Listener with deadline support.
+type deadlineListener interface {
+	net.Listener
+	SetDeadline(t time.Time) error
+}
+
+// SetDeadline sets a deadline t on all net.Listeners owned by this Listener.
+// All net.Listeners must support the method "SetDeadline(t time.Time) error"
+// or an error will be returned. If more than one net.Listener returns an error,
+// only the first error is returned.
+func (l *Listener) SetDeadline(t time.Time) error {
+	dls := make([]deadlineListener, 0, len(l.ls))
+	for _, ln := range l.ls {
+		dl, ok := ln.(deadlineListener)
+		if !ok {
+			return fmt.Errorf("multinet: net.Listener %T does not have a SetDeadline method", ln)
+		}
+
+		dls = append(dls, dl)
+	}
+
+	var err error
+	for _, dl := range dls {
+		// Only propagate the first returned error to the caller.
+		if lerr := dl.SetDeadline(t); lerr != nil && err == nil {
+			err = lerr
+		}
+	}
+
+	return err
 }
 
 // Close closes all net.Listeners owned by this Listener. If more than one
@@ -135,17 +168,18 @@ func (l *Listener) accept(ln net.Listener) {
 	for {
 		c, err := ln.Accept()
 
-		// If l.doneC was closed, stop the goroutine. Otherwise, return the
-		// connection and/or error.
+		// Prioritize the done signal over accepting a connection, but allow
+		// either to occur later to satisfy nettest.
 		select {
 		case <-l.doneC:
 			return
 		default:
 		}
 
-		l.acceptC <- accept{
-			c:   c,
-			err: err,
+		select {
+		case <-l.doneC:
+			return
+		case l.acceptC <- accept{c: c, err: err}:
 		}
 	}
 }

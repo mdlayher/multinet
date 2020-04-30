@@ -202,6 +202,16 @@ func TestListenerCloseError(t *testing.T) {
 	}
 }
 
+func TestListenerNoSetDeadline(t *testing.T) {
+	// TCP listener supports deadlines, but errListener does not.
+	l := multinet.Listen(localListener("tcp"), &errListener{})
+	defer l.Close()
+
+	if err := l.SetDeadline(time.Now()); err == nil {
+		t.Fatal("expected an error, but none occurred")
+	}
+}
+
 func TestListenNoListeners(t *testing.T) {
 	// While a Listener constructed with no net.Listeners wouldn't be useful,
 	// we should verify it doesn't panic or similar.
